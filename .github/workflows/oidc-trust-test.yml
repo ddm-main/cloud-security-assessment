@@ -1,0 +1,47 @@
+name: oidc-trust-test
+
+# Manual only. Used by aws-validation/real_oidc_trust_test.py to check how an AWS role trust policy
+# treats the OIDC token of this workflow. It does nothing unless the repository secret
+# AWS_TEST_ACCOUNT_ID is set (a secret, so GitHub masks the account ID in the logs), and it never
+# receives AWS credentials.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  try-roles:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Try to assume each test role with this run's OIDC token
+        env:
+          ACCOUNT: ${{ secrets.AWS_TEST_ACCOUNT_ID }}
+        run: |
+          if [ -z "$ACCOUNT" ]; then echo "AWS_TEST_ACCOUNT_ID is not set, nothing to do"; exit 0; fi
+          token() {
+            curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=$1" |
+              python3 -c 'import sys, json; print(json.load(sys.stdin)["value"])'
+          }
+          good=$(token sts.amazonaws.com)
+          # the claims are not secret; they are what the role's trust policy is compared with
+          echo "$good" | python3 -c 'import sys, json, base64; p = sys.stdin.read().split(".")[1]; c = json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4))); print("CLAIMS iss=%s aud=%s sub=%s" % (c["iss"], c["aud"], c["sub"]))'
+          other=$(token https://example.invalid)
+          echo "::add-mask::$good"
+          echo "::add-mask::$other"
+          try() {
+            if aws sts assume-role-with-web-identity --region eu-west-1 \
+                 --role-arn "arn:aws:iam::${ACCOUNT}:role/$2" --role-session-name oidc-test \
+                 --web-identity-token "$3" > /dev/null 2> err.txt; then
+              echo "RESULT $1 OK"
+            else
+              echo "RESULT $1 DENIED"
+              echo "  reason: $(grep -v '^$' err.txt | head -1 | cut -c1-200)"
+            fi
+          }
+          try pinned oidc-test-pinned "$good"
+          try wrong-repo oidc-test-wrong-repo "$good"
+          try classic-sub oidc-test-classic-sub "$good"
+          try pinned-wrong-audience oidc-test-pinned "$other"

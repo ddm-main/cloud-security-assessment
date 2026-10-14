@@ -1,0 +1,10 @@
+{"Version":"2012-10-17","Statement":[
+{"Sid":"EC2Describe","Effect":"Allow","Action":["ec2:DescribeInstances","ec2:DescribeInstanceStatus","ec2:DescribeTags"],"Resource":"*"},
+{"Sid":"EC2ControlledActions","Effect":"Allow","Action":["ec2:StartInstances","ec2:StopInstances","ec2:RebootInstances","ec2:CreateTags"],"Resource":"arn:aws:ec2:eu-west-1:22222222222:instance/*"},
+{"Sid":"SSMReadOnly","Effect":"Allow","Action":["ssm:GetCommandInvocation","ssm:ListCommandInvocations","ssm:DescribeInstanceInformation","ssm:GetDocument","ssm:ListDocuments","ssm:GetAutomationExecution","ssm:DescribeAutomationExecutions"],"Resource":"*"},
+{"Sid":"SSMSendCmdDocs","Effect":"Allow","Action":"ssm:SendCommand","Resource":["arn:aws:ssm:eu-west-1::document/AWS-RunShellScript","arn:aws:ssm:eu-west-1::document/AWS-RunPowerShellScript","arn:aws:ssm:eu-west-1:222222222222:document/Automated-Deployment-Dev","arn:aws:ssm:eu-west-1:839864138277:document/customer-*"]},
+{"Sid":"SSMSendCmdInstances","Effect":"Allow","Action":"ssm:SendCommand","Resource":"arn:aws:ec2:eu-west-1:222222222222:instance/*","Condition":{"StringEquals":{"ssm:resourceTag/AutomationAllowed":"true","ssm:resourceTag/Application":"Automated-Deployment-Dev"}}},
+{"Sid":"CWLogsSSM","Effect":"Allow","Action":["logs:CreateLogGroup","logs:CreateLogStream","logs:PutLogEvents","logs:DescribeLogGroups","logs:DescribeLogStreams"],"Resource":"arn:aws:logs:eu-west-1:839864138277:log-group:/aws/ssm/deployment/*"},
+{"Sid":"S3Bucket","Effect":"Allow","Action":"s3:GetBucketLocation","Resource":"arn:aws:s3:::automated-deployment*"},
+{"Sid":"S3Objects","Effect":"Allow","Action":["s3:GetObject","s3:PutObject"],"Resource":"arn:aws:s3:::*/*"},
+{"Sid":"DenyHighRiskSSM","Effect":"Deny","Action":["ssm:CreateActivation","ssm:CreateOpsItem","ssm:DeleteParameter","ssm:ModifyDocumentPermission","ssm:PutParameter","ssm:ResumeSession","ssm:StartSession","ssm:TerminateSession","ssm:UpdateDocument","ssm:UpdateManagedInstanceRole"],"Resource":"*"}]}
