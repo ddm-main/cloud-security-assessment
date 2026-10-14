@@ -1,6 +1,6 @@
 # AWS validation
 
-The SCPs and policies in this repo were tested with real calls against real AWS (GitHub for the OIDC part). There is no simulated result here. Each script cleans up after itself and was last run with nothing left behind.
+The SCPs and policies in this repo were tested with real calls against real AWS (GitHub and Microsoft Entra ID for the OIDC parts). There is no simulated result here. Each script cleans up after itself and was last run with nothing left behind.
 
 | Script | What it tests | Checks | Cost |
 |---|---|---|---|
@@ -12,9 +12,10 @@ The SCPs and policies in this repo were tested with real calls against real AWS 
 | `real_rds_login_test.py` | Logging in with IAM tokens, and what each database user can do | 25 | cents, ~20 min |
 | `real_rds_restore_test.py` | Restore from snapshot, per role, without building a database | 4 | free |
 | `real_session_test.py` | MFA conditions, session revocation, permissions removed, role deleted | 9 | free |
-| `real_oidc_trust_test.py` | Pinning an OIDC token's subject and audience in a role trust policy | 11 | free |
+| `real_oidc_trust_test.py` | Pinning an OIDC token's subject and audience in a role trust policy (GitHub Actions as issuer) | 11 | free |
+| `real_entra_oidc_test.py` | A real Microsoft Entra ID token in a role trust policy, v1 and v2 token formats | 10 | free |
 
-187 checks. The scripts use the AWS CLI with `AWS_PROFILE`; the OIDC one also needs `gh`, and the login test needs `psql` (`brew install libpq`). They create real resources, so run them only in an account you can spare. `annexure-a-as-printed.json` is a rebuild of the PDF's policy (its text has empty statements and missing commas; the S3 bucket ARN keeps its stray space), `annexure-a-account-fixed.json` has only the account ID typo corrected, and `rds-*.json` are the Annexure C policies.
+197 checks. The scripts use the AWS CLI with `AWS_PROFILE`; the OIDC one also needs `gh`, and the login test needs `psql` (`brew install libpq`). They create real resources, so run them only in an account you can spare. `annexure-a-as-printed.json` is a rebuild of the PDF's policy (its text has empty statements and missing commas; the S3 bucket ARN keeps its stray space), `annexure-a-account-fixed.json` has only the account ID typo corrected, and `rds-*.json` are the Annexure C policies.
 
 ```bash
 export AWS_PROFILE=<account to test in>          # for real_scp_test.py use the management account of an Organization
@@ -27,6 +28,7 @@ python3 aws-validation/real_rds_login_test.py
 python3 aws-validation/real_rds_restore_test.py
 python3 aws-validation/real_session_test.py
 python3 aws-validation/real_oidc_trust_test.py
+python3 aws-validation/real_entra_oidc_test.py --token-version 1     # needs az login; also run with --token-version 2
 ```
 
 ## SCPs
@@ -76,8 +78,25 @@ A new member account only has a few services active at first, so the same rules 
 - A deny on `aws:TokenIssueTime` cuts off older sessions at once while newer ones work. Deleting a role's permissions or the role itself also ends live sessions immediately. Removing someone from an identity provider group changes nothing in IAM, so their existing credentials last until they expire unless the role is revoked.
 - OIDC (GitHub Actions as the issuer, the same AWS mechanism EKS pods and Azure DevOps use): a role pinned to the exact `sub` was assumed from the right branch and denied from another branch, another repository, and with the wrong audience. AWS refuses to create a GitHub trust policy with no `sub` or a bare wildcard. The token's `sub` carries numeric IDs (`repo:owner@id/name@id:...`), so a policy copied from an older guide never matches; take it from a real token.
 
+## Microsoft Entra ID token
+
+`real_entra_oidc_test.py` creates an Entra app registration, gets a real token for it with the Azure CLI (the signed-in user's token, no client secret), and tries it against roles that trust an IAM OIDC provider for the token's issuer. Entra can issue two token formats for the same app, and AWS treated them differently:
+
+| | v1 token | v2 token |
+|---|---|---|
+| Issuer | `https://sts.windows.net/<tenant>/` | `https://login.microsoftonline.com/<tenant>/v2.0` |
+| Audience | `api://<app id>` | `<app id>` |
+| Role pinned to the exact `sub` and audience | **assumed** | rejected: `InvalidIdentityToken` |
+| Role pinned to a different `sub` | denied | rejected: `InvalidIdentityToken` |
+| Role with an audience condition only | created, and **assumed** | created, rejected |
+| Token issued for another audience (Microsoft Graph) | rejected | rejected |
+
+- AWS rejected every v2 token as "could not be validated", while the token itself looked normal (RS256, signing key published, issuer matching discovery). In earlier manual runs an explicit certificate thumbprint made no difference. Set the app to issue v1 tokens and test before relying on either format.
+- Unlike GitHub, AWS accepts a trust policy for Entra that checks only the audience. Any user who can get a token for the app can then assume that role, so pin `sub`.
+- The v1 `sub` is an identifier specific to the user and the app. The token also carried `amr` (`pwd`, `mfa`) and lived about 77 to 90 minutes.
+
 ## Not tested
 
-- IAM Identity Center (the console is needed to enable it, and the test user has no `sso:*` permissions), SAML federation, SailPoint, Entra ID, Azure DevOps and EKS themselves.
+- IAM Identity Center (the console is needed to enable it, and the test user has no `sso:*` permissions), SAML federation, SailPoint, Azure DevOps and EKS themselves, and Entra provisioning (SCIM). Entra tokens were tested only as a signed-in user's token, not for a service principal or managed identity.
 - Other Regions and other accounts than the ones used, and SCP behaviour on principals other than the one exempt role.
 - The tests show what the policies allow and deny, not whether an organisation's process (approvals, access reviews, SCIM timing) works.
