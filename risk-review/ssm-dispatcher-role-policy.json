@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StartOnlyTheApprovedRunbook",
+      "Effect": "Allow",
+      "Action": "ssm:StartAutomationExecution",
+      "Resource": [
+        "arn:aws:ssm:eu-west-1:222222222222:document/Automated-Deployment-Dev-Runbook",
+        "arn:aws:ssm:eu-west-1:222222222222:automation-execution/*"
+      ]
+    },
+    {
+      "Sid": "WatchAutomationExecutions",
+      "Effect": "Allow",
+      "Action": ["ssm:GetAutomationExecution", "ssm:DescribeAutomationExecutions"],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "eu-west-1" } }
+    },
+    {
+      "Sid": "PassOnlyTheExecutionRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::222222222222:role/automation_execution_role",
+      "Condition": { "StringEquals": { "iam:PassedToService": "ssm.amazonaws.com" } }
+    },
+    {
+      "Sid": "DispatcherDoesNotTouchInstancesDirectly",
+      "Effect": "Deny",
+      "Action": [
+        "ssm:SendCommand", "ssm:StartSession", "ssm:ResumeSession", "ec2:CreateTags", "ec2:DeleteTags",
+        "ec2:StartInstances", "ec2:StopInstances", "ec2:RebootInstances", "s3:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
