@@ -1,0 +1,51 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyAllOutsideEuWest1",
+      "Effect": "Deny",
+      "NotAction": [
+        "acm:*",
+        "account:*",
+        "aws-portal:*",
+        "billing:*",
+        "budgets:*",
+        "ce:*",
+        "cloudfront:*",
+        "consolidatedbilling:*",
+        "cur:*",
+        "directconnect:*",
+        "ec2:DescribeRegions",
+        "freetier:*",
+        "fms:*",
+        "globalaccelerator:*",
+        "health:*",
+        "iam:*",
+        "invoicing:*",
+        "organizations:*",
+        "payments:*",
+        "pricing:*",
+        "route53:*",
+        "route53domains:*",
+        "s3:CreateMultiRegionAccessPoint",
+        "s3:GetAccountPublic*",
+        "s3:ListAllMyBuckets",
+        "s3:ListMultiRegionAccessPoints",
+        "s3:PutAccountPublic*",
+        "shield:*",
+        "sts:*",
+        "support:*",
+        "tax:*",
+        "trustedadvisor:*",
+        "waf:*",
+        "wafv2:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": "eu-west-1"
+        }
+      }
+    }
+  ]
+}
