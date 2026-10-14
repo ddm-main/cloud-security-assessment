@@ -1,0 +1,81 @@
+name: security-scan
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  SEMGREP_VERSION: "1.180.0"
+  CHECKOV_VERSION: "3.3.29"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+  OSV_SCANNER_VERSION: "2.7.0"
+  OSV_SCANNER_SHA256: "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b"
+
+jobs:
+  builtin:
+    name: tests and built-in rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests
+        run: python3 -m unittest discover -s security-automation/tests -v
+      - name: Clean example must pass
+        run: ./security-automation/security-scan.py --path security-automation/examples/clean-app --builtin-only
+      - name: Vulnerable example must fail
+        run: |
+          if ./security-automation/security-scan.py --path security-automation/examples/vulnerable-app --builtin-only; then
+            echo "vulnerable example unexpectedly passed"; exit 1
+          fi
+
+  real-tools:
+    name: real scanners with --require-tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install semgrep and checkov
+        run: pip install "semgrep==${SEMGREP_VERSION}" "checkov==${CHECKOV_VERSION}"
+      - name: Install gitleaks (pinned, checksum verified)
+        run: |
+          curl -sSfL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/bin" && tar -xzf gitleaks.tar.gz -C "$HOME/bin" gitleaks
+      - name: Install osv-scanner (pinned, checksum verified)
+        run: |
+          curl -sSfL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum -c -
+          install -m 0755 osv-scanner "$HOME/bin/osv-scanner"
+      - name: Show tool versions
+        run: |
+          export PATH="$HOME/bin:$PATH"
+          semgrep --version && checkov --version && gitleaks version && osv-scanner --version
+      - name: Clean example must pass with every scanner required
+        run: |
+          export PATH="$HOME/bin:$PATH"
+          ./security-automation/security-scan.py --path security-automation/examples/clean-app --require-tools
+      - name: Vulnerable example must fail because of findings, not because a scanner broke
+        run: |
+          export PATH="$HOME/bin:$PATH"
+          ./security-automation/security-scan.py --path security-automation/examples/vulnerable-app \
+            --require-tools --format json --output report.json || true
+          python3 - <<'EOF'
+          import json
+          report = json.load(open("report.json"))
+          bad = [s for s in report["scans"] if s["status"] != "ok"]
+          assert not bad, "a scanner did not run: %s" % bad
+          assert report["decision"] == "FAIL", "vulnerable example did not fail"
+          categories = {f["category"] for f in report["findings"]}
+          assert categories == {"sast", "dependency", "secrets", "iac"}, categories
+          print("OK:", report["summary"]["total"], "findings in", sorted(categories))
+          EOF
